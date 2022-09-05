@@ -1,0 +1,125 @@
+---
+title: "Data607_Assignment1"
+author: "Johnny Rodriguez"
+date: "2022-09-04"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction - Senate 2022 Poll Data
+
+I chose to look at Senate 2022 race polling data.  The polling dashboard is linked here:
+https://projects.fivethirtyeight.com/polls/
+
+Embedded in the Senate 2022 data is data about the polls and pollsters themselves.  I explored the quality of these pollsters and their polling methodologies for a subset of polls found in the current polling data set.
+
+### Environment Setup
+For this analysis, we will need to load ggplot2 and rcurl packages.
+
+
+```{r, results='hide'}
+install.packages("ggplot2", repos = "http://cran.us.r-project.org")
+install.packages("RCurl", repos = "http://cran.us.r-project.org")
+```
+
+### Downloading the data
+538 data was moved to my github repo and laoded from there.  The csv was read into a data frame.
+
+```{r}
+library(RCurl)
+sourcecsv <- getURL("https://raw.githubusercontent.com/johnnydrodriguez/Data607/main/senate_polls.csv")
+CurrentSenatePolls <- read.csv(text=sourcecsv)
+
+```
+
+### Data Clean Up and Preparation
+To analyze current Senate poll data to focus on the polls and pollsters, several steps were taken to subset and clean the data.  Because poll grades are needed for the analysis, polls without grades were removed; duplicate records for the polls taken in 2022 were also removed.
+
+
+```{r}
+
+#Subset data from source for analysis and rename columns
+DF_PollMethodsGrades <- data.frame(CurrentSenatePolls[, c("poll_id", "pollster", "fte_grade", "methodology", "sample_size")])
+colnames(DF_PollMethodsGrades) <- c("Poll_ID", "Pollster_Name", "Poll_Grade", "Methodology", "Sample_Size")
+
+#Removes rows with empty Poll Grades
+DF_PollMethodsGrades <-  DF_PollMethodsGrades[!(is.na(DF_PollMethodsGrades$Poll_Grade) | DF_PollMethodsGrades$Poll_Grade==""), ]
+
+#Removes duplicates based on the Poll_ID
+DF_PollMethodsGrades <- DF_PollMethodsGrades[!duplicated(DF_PollMethodsGrades$Poll_ID), ]
+
+head(DF_PollMethodsGrades, 3)
+```
+
+### Joining a Grade Scoring Table
+Because the grades in the data were characters/categorical, I joined a grades look-up table to assign a numerical scores to the grades.
+Grade scores range from A+ = 12 to F = 0
+Provisional grades (A/B, B/C, C/D) are scored with the average of the 2 grades.
+Once the look-up table was created, it was joined to the subset Senate Polling and Pollster data created above.
+
+
+```{r}
+
+#Create grade scoring lookup table.
+Poll_Grade <- c("A+","A","A-","B+","B","B-","C+","C","C-","D+","D","D-","F","A/B","B/C","C/D" )
+Poll_Score <- c(12, 11, 10, 9, 8, 7, 6, 5, 4, 3, 2, 1, 0,9.5, 7.5, 3.5)
+GradeLookup <- data.frame(Poll_Grade, Poll_Score)
+
+
+#Join Based On Poll Grade columne 
+DF_PollMethodsGrades <- merge(DF_PollMethodsGrades, GradeLookup)
+
+tail(DF_PollMethodsGrades)
+
+```
+### Pollster Ranking - Bar Plot
+The initial exploration sought to identify what Pollsters scored highest on their polls and what methodology was used.
+
+```{r}
+library(ggplot2)
+ggplot(DF_PollMethodsGrades, aes(x=reorder(Pollster_Name, +Poll_Score), y = Poll_Score, fill=Methodology)) +
+  geom_bar(position = "dodge",
+            stat= "summary",
+            fun = "mean") + coord_flip()+
+  xlab("Pollster") + 
+  ylab("Average Poll Score" ) + 
+  ggtitle("Pollsters Ranking By Poll Score for Senate 2022 Races")
+
+```
+
+### Distribution of Poll Scores - Histogram
+The histogram shows the distribution of the poll scores across all of the graded Senate 22 polls.
+
+```{r}
+ggplot(DF_PollMethodsGrades, aes(x=Poll_Score, fill=Methodology)) + geom_histogram(bins=20)+
+  xlab("Poll Score (Higher is Better)") + 
+  ylab("Count of Polls" ) + 
+  ggtitle("Distribution of Poll Scores for Senate 2022 Races")
+```
+
+### Association of Scores and Sample Size - Scatterplot
+For the final analysis, I explored the association of the score and sample size.  Additionally, to map where polls landed relative to average sample and average score, I added trend lines. This allows me to see which polls performed best with the smallest sample sizes.
+
+```{r}
+ggplot(DF_PollMethodsGrades, aes(x=Sample_Size, y=Poll_Score)) + 
+  geom_point((aes(color = factor(Methodology)))) +
+  geom_vline(xintercept = mean(DF_PollMethodsGrades$Sample_Size, na.rm=TRUE), color='blue', lty='dashed', lwd=.3)+
+      annotate("text", x=870, y=5, label="Avg Sample Size", angle=90, size=5, color="red")+
+  geom_hline(yintercept = mean(DF_PollMethodsGrades$Poll_Score, na.rm=TRUE), color='blue', lty='dashed', lwd=.3)+
+    annotate("text", x=2000, y=8.40, label="Avg Poll Score", size=5, color="red")+
+  geom_text(aes(label=Pollster_Name), angle=90, size=2.5, check_overlap = TRUE)+
+  xlab("Poll Sample Size") + 
+  ylab("Poll Score (Higher is Better)") + 
+  ggtitle("Quality of Polls For Senate 2022 Races")+
+  labs(color = "Polling Method")
+
+```
+
+### Conclusion
+I could not find a negative or positive association between Poll Score and Poll Sample Size (ie, polls did not get better or worse based on their sample size).  To the contrary, both high and low scored polls average around 800 participants.  There was also no association between methodology and poll score; most methodologies were represented in the 'Best Score/Low Sample Size' quadrant.  Methods are dispersed among the pollster ranking.
+
+Future analysis may include parsing out the methodology style (single vs multiple) or include other variables that may affect overall score (like sponsorship or partisan affiliation).
+
